@@ -1,0 +1,13 @@
+﻿.vs/
+**/bin/
+**/obj/
+publish/
+artifacts/
+*.user
+*.suo
+*.docx
+*.audit.json
+GB-T9704-2012批量审计清单_*.json
+docs/requirements/
+docs/superpowers/
+docs/reviews/
