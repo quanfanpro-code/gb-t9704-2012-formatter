@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
@@ -15,15 +15,11 @@ public sealed class GovStructureAnalyzer
     private static readonly Regex 附件正则 = new(@"^附件[：:\s]", RegexOptions.Compiled);
     private static readonly string[] 版记关键词 = ["抄送", "印发", "印送", "分送"];
     private static readonly string[] 主送机关排除词 = ["标题", "通知", "决定", "纪要", "请示", "报告", "附件", "抄送", "印发", "日期"];
-    // 关键词之间已剔除包含关系冗余项（“令”覆盖“命令”、“函”覆盖“复函”、“纪要”覆盖“会议纪要”）
     private static readonly string[] 公文标题关键词 = ["通知", "通报", "决定", "请示", "报告", "意见", "公告", "通告", "纪要", "函", "令"];
-    private static readonly string[] 信函关键词 = ["函", "商洽", "答复"];
-    private static readonly string[] 命令关键词 = ["令"];
-    private static readonly string[] 纪要关键词 = ["纪要"];
 
     public GovDocumentStructure 分析(MainDocumentPart mainPart)
     {
-        var body = mainPart.Document.Body ?? throw new InvalidOperationException("文档没有正文。");
+        var body = mainPart.Document?.Body ?? throw new InvalidOperationException("文档没有正文。");
         var paragraphs = body.Elements<Paragraph>()
             .Where(x => !x.Ancestors<Table>().Any())
             .ToList();
@@ -35,47 +31,40 @@ public sealed class GovStructureAnalyzer
         structure.是否含页码字段 = 检测页码字段(mainPart);
         识别横向节(body, structure);
 
-        var titleCount = 0;
-        for (var i = 0; i < Math.Min(paragraphs.Count, 12); i++)
+        for (var i = 0; i < Math.Min(paragraphs.Count, 20); i++)
         {
-            var paragraph = paragraphs[i];
-            var text = 获取段落可见文本(paragraph);
+            if (是文号(获取段落可见文本(paragraphs[i])))
+            {
+                structure.文号段索引.Add(i);
+                break;
+            }
+        }
+
+        var 标题起点 = structure.文号段索引.Count > 0 ? structure.文号段索引.Max() + 1 : 0;
+        var 已发现标题 = false;
+        for (var i = 标题起点; i < Math.Min(paragraphs.Count, 标题起点 + 12); i++)
+        {
+            var text = 获取段落可见文本(paragraphs[i]);
             if (string.IsNullOrWhiteSpace(text))
                 continue;
 
-            if (疑似标题段(mainPart, paragraph, text))
+            var 允许版式特征 = structure.文号段索引.Count > 0;
+            if (!疑似标题段(mainPart, paragraphs[i], text, 允许版式特征))
             {
-                structure.标题段索引.Add(i);
-                titleCount++;
-                if (titleCount >= 3)
+                if (已发现标题)
                     break;
                 continue;
             }
 
-            if (titleCount > 0)
+            structure.标题段索引.Add(i);
+            已发现标题 = true;
+            if (structure.标题段索引.Count >= 3)
                 break;
         }
 
         if (structure.标题段索引.Count > 0)
         {
-            var maxTitleIndex = structure.标题段索引.Max();
-            for (var i = maxTitleIndex + 1; i < Math.Min(paragraphs.Count, maxTitleIndex + 8); i++)
-            {
-                var text = 获取段落可见文本(paragraphs[i]);
-                if (string.IsNullOrWhiteSpace(text))
-                    continue;
-
-                if (是文号(text))
-                {
-                    structure.文号段索引.Add(i);
-                    break;
-                }
-            }
-
-            var recipientStart = structure.文号段索引.Count > 0
-                ? structure.文号段索引.Max() + 1
-                : maxTitleIndex + 1;
-
+            var recipientStart = structure.标题段索引.Max() + 1;
             for (var i = recipientStart; i < Math.Min(paragraphs.Count, recipientStart + 6); i++)
             {
                 var text = 获取段落可见文本(paragraphs[i]);
@@ -83,18 +72,12 @@ public sealed class GovStructureAnalyzer
                     continue;
 
                 if (是主送机关(text))
-                {
                     structure.主送机关段索引.Add(i);
-                    break;
-                }
-
-                if (检测标题级别(text) > 0)
-                    break;
+                break;
             }
         }
 
-        // 文种识别限定在标题区+文号区文本，避免正文出现“函”“令”等高频字时误判文种
-        structure.文种结果 = 检测文种(构建文种判定文本(paragraphs, structure));
+        structure.文种结果 = 检测文种(null);
 
         for (var i = paragraphs.Count - 1; i >= Math.Max(0, paragraphs.Count - 20); i--)
         {
@@ -136,38 +119,7 @@ public sealed class GovStructureAnalyzer
 
     public static GovDocumentKindResult 检测文种(string? text)
     {
-        var normalized = 归一化文种文本(text);
-        if (string.IsNullOrWhiteSpace(normalized))
-            return new GovDocumentKindResult(GovDocumentKind.普通公文, "未识别到有效文本，按普通公文兜底。");
-
-        if (包含任一关键词(normalized, 纪要关键词))
-            return new GovDocumentKindResult(GovDocumentKind.纪要, "命中“纪要/会议纪要”等纪要特征词。");
-
-        if (normalized.Contains("国务院令", StringComparison.Ordinal) ||
-            normalized.Contains("主席令", StringComparison.Ordinal) ||
-            normalized.Contains("第", StringComparison.Ordinal) && normalized.Contains("号", StringComparison.Ordinal) &&
-            包含任一关键词(normalized, 命令关键词))
-            return new GovDocumentKindResult(GovDocumentKind.命令, "命中“令/命令/第×号”等命令文种特征。");
-
-        if (包含任一关键词(normalized, 信函关键词))
-            return new GovDocumentKindResult(GovDocumentKind.信函, "命中“函/复函/商洽/答复”等信函特征词。");
-
-        return new GovDocumentKindResult(GovDocumentKind.普通公文, "未命中特定格式特征，按普通公文处理。");
-    }
-
-    /// <summary>
-    /// 文种识别只取标题区与文号区文本，避免正文中的高频字（如“函”“令”）误判文种；
-    /// 未识别到标题/文号时退化为前 12 段版头区文本（与标题扫描窗口一致）。
-    /// </summary>
-    private static string 构建文种判定文本(List<Paragraph> paragraphs, GovDocumentStructure structure)
-    {
-        var 候选索引 = structure.标题段索引.Concat(structure.文号段索引).Distinct().OrderBy(x => x).ToList();
-        if (候选索引.Count > 0)
-            return string.Join("\n", 候选索引.Select(i => 获取段落可见文本(paragraphs[i])));
-
-        return string.Join("\n", paragraphs.Take(12)
-            .Select(获取段落可见文本)
-            .Where(x => !string.IsNullOrWhiteSpace(x)));
+        return new GovDocumentKindResult(GovDocumentKind.普通公文, "本版本仅处理一般普通公文。");
     }
 
     public static int 检测标题级别(string? text)
@@ -183,21 +135,21 @@ public sealed class GovStructureAnalyzer
         return 0;
     }
 
-    private static bool 疑似标题段(MainDocumentPart mainPart, Paragraph paragraph, string text)
+    private static bool 疑似标题段(MainDocumentPart mainPart, Paragraph paragraph, string text, bool 允许版式特征)
     {
         if (text.Length > 60 || text.Contains('：') || text.EndsWith("号", StringComparison.Ordinal))
             return false;
 
         var styledLevel = GovOpenXmlHelper.解析样式标题级别(mainPart, paragraph);
-        if (styledLevel > 0)
+        if (允许版式特征 && styledLevel > 0)
             return true;
 
         var outlineLevel = GovOpenXmlHelper.解析大纲级别(paragraph);
-        if (outlineLevel > 0)
+        if (允许版式特征 && outlineLevel > 0)
             return true;
 
         var justification = paragraph.ParagraphProperties?.Justification?.Val?.Value;
-        if (justification == JustificationValues.Center)
+        if (允许版式特征 && justification == JustificationValues.Center)
             return true;
 
         if (text.Length <= 40 &&
@@ -206,7 +158,7 @@ public sealed class GovStructureAnalyzer
             包含任一关键词(text, 公文标题关键词))
             return true;
 
-        return paragraph.Descendants<RunProperties>()
+        return 允许版式特征 && paragraph.Descendants<RunProperties>()
             .Any(x => int.TryParse(x.FontSize?.Val, out var size) && size >= 36);
     }
 
@@ -285,11 +237,6 @@ public sealed class GovStructureAnalyzer
         }
     }
 
-    private static string 归一化文种文本(string? text)
-    {
-        return text?.Replace("\r", "\n").Replace("　", " ").Trim() ?? string.Empty;
-    }
-
     private static string 获取段落可见文本(Paragraph paragraph)
     {
         return GovOpenXmlHelper.提取归一化可见文本(paragraph);
@@ -324,13 +271,6 @@ public sealed class GovDocumentStructure
     public bool 是否含页码字段 { get; set; }
 }
 
-public enum GovDocumentKind
-{
-    普通公文,
-    信函,
-    命令,
-    纪要
-}
+public enum GovDocumentKind { 普通公文 }
 
 public sealed record GovDocumentKindResult(GovDocumentKind Kind, string Reason);
-

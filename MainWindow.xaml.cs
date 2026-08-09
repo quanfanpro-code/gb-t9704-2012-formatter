@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows.Media;
 using System.Windows.Documents;
 using System.ComponentModel;
@@ -41,7 +41,7 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
         _logDoc = _logBox.Document;
-        
+
         _startButton.Content = "开始处理";
         _startButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
 
@@ -177,13 +177,12 @@ public partial class MainWindow : FluentWindow
         _logDoc.Blocks.Clear();
 
         var includeSubfolders = _includeSubfoldersCheck.IsChecked == true;
-        var preferredKind = 获取手动文种();
         var outputDir = 读取输出目录();
         var token = _cts.Token;
-        _ = Task.Run(() => 后台处理(path, includeSubfolders, preferredKind, outputDir, token));
+        _ = Task.Run(() => 后台处理(path, includeSubfolders, outputDir, token));
     }
 
-    private void 后台处理(string path, bool includeSubfolders, GovDocumentKind? preferredKind, string? outputDir, CancellationToken token)
+    private void 后台处理(string path, bool includeSubfolders, string? outputDir, CancellationToken token)
     {
         try
         {
@@ -191,7 +190,7 @@ public partial class MainWindow : FluentWindow
             {
                 if (token.IsCancellationRequested) return;
                 Dispatcher.BeginInvoke(() => AppendLog($"开始处理文件：{path}"));
-                var result = 处理单个文件(path, preferredKind, outputDir);
+                var result = 处理单个文件(path, outputDir);
                 Dispatcher.Invoke(() =>
                 {
                     if (result.Success)
@@ -253,7 +252,7 @@ public partial class MainWindow : FluentWindow
                     var idx = i + 1;
                     try
                     {
-                        var result = 处理单个文件(file, preferredKind, outputDir);
+                        var result = 处理单个文件(file, outputDir);
                         batchAuditItems.Add(构建批量审计项(file, result));
                         if (result.Success)
                             success++;
@@ -358,7 +357,7 @@ public partial class MainWindow : FluentWindow
 
                 if (batchAuditItems.Count > 0)
                 {
-                    var batchAuditPath = _auditService.写入批量审计清单(path, batchAuditItems);
+                    var batchAuditPath = _auditService.写入批量审计清单(path, batchAuditItems, outputDir);
                     Dispatcher.BeginInvoke(() => AppendLog($"批量审计清单：{batchAuditPath}"));
                 }
 
@@ -412,13 +411,12 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private ResponseContract 处理单个文件(string inputPath, GovDocumentKind? preferredKind, string? outputDir)
+    private ResponseContract 处理单个文件(string inputPath, string? outputDir)
     {
         var request = new RequestContract
         {
             InputPath = inputPath,
-            OutputPath = 输出文件命名规则.生成输出路径(inputPath, outputDir),
-            PreferredDocumentKind = preferredKind
+            OutputPath = 输出文件命名规则.生成输出路径(inputPath, outputDir)
         };
 
         var pipeline = new GovDocumentPipeline();
@@ -473,7 +471,7 @@ public partial class MainWindow : FluentWindow
             result.HasPageNumberField,
             result.LandscapeSectionCount,
             result.ImprintCount,
-            result.Success ? "通过" : "阻断",
+            result.Success ? (result.NeedsManualReview ? "人工复核" : "通过") : "阻断",
             result.FailureStage,
             result.RuleCode,
             result.RuleName,
@@ -490,19 +488,6 @@ public partial class MainWindow : FluentWindow
     }
 
     public enum LogType { Info, Success, Warning, Error }
-
-    private GovDocumentKind? 获取手动文种()
-    {
-        var text = (_documentKindComboBox?.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content?.ToString()?.Trim();
-        return text switch
-        {
-            "普通公文" => GovDocumentKind.普通公文,
-            "信函" => GovDocumentKind.信函,
-            "命令" => GovDocumentKind.命令,
-            "纪要" => GovDocumentKind.纪要,
-            _ => null
-        };
-    }
 
     private string? 读取输出目录()
     {

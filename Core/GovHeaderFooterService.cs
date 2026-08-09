@@ -1,4 +1,4 @@
-using DocumentFormat.OpenXml;
+﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
@@ -11,7 +11,8 @@ public sealed class GovHeaderFooterService
     public void 格式化(WordprocessingDocument document)
     {
         var mainPart = document.MainDocumentPart ?? throw new InvalidOperationException("文档缺少主部件。");
-        var body = mainPart.Document.Body ?? throw new InvalidOperationException("文档缺少正文。");
+        var mainDocument = mainPart.Document ?? throw new InvalidOperationException("文档缺少主文档。");
+        var body = mainDocument.Body ?? throw new InvalidOperationException("文档缺少正文。");
 
         // 清除旧版 Word 可能塞在 SectionProperties 中的 EvenAndOddHeaders（该元素只允许出现在 Settings 中）
         清除非法EvenAndOddHeaders(document);
@@ -22,13 +23,9 @@ public sealed class GovHeaderFooterService
 
         foreach (var section in 构建分节(body))
         {
-            配置页面(section.SectionProperties);
-            复制偶数页页眉(section.SectionProperties, mainPart);
-
-            if (是版记节(section))
-                continue;
-
-            重建页脚(section.SectionProperties, mainPart);
+            配置页面(section);
+            复制偶数页页眉(section, mainPart);
+            重建页脚(section, mainPart);
         }
     }
 
@@ -142,13 +139,9 @@ public sealed class GovHeaderFooterService
 
     private static void 重建页脚(SectionProperties sectionProperties, MainDocumentPart mainPart)
     {
-        // 保留首页页脚（type=First）引用，只重建 Default/Even 页脚
         var 待清理关系 = new List<string>();
         foreach (var footerRef in sectionProperties.Elements<FooterReference>().ToList())
         {
-            if (footerRef.Type?.Value == HeaderFooterValues.First)
-                continue;
-
             if (!string.IsNullOrWhiteSpace(footerRef.Id?.Value))
                 待清理关系.Add(footerRef.Id!.Value!);
             footerRef.Remove();
@@ -159,7 +152,7 @@ public sealed class GovHeaderFooterService
         {
             try
             {
-                var 仍被引用 = mainPart.Document.Descendants<FooterReference>()
+                var 仍被引用 = (mainPart.Document?.Descendants<FooterReference>() ?? [])
                     .Any(x => x.Id?.Value == relationId);
                 if (仍被引用)
                     continue;
@@ -182,6 +175,9 @@ public sealed class GovHeaderFooterService
         var evenFooterPart = mainPart.AddNewPart<FooterPart>();
         evenFooterPart.Footer = new Footer(创建页脚段落(JustificationValues.Left, leftChars: 1));
 
+        var firstFooterPart = mainPart.AddNewPart<FooterPart>();
+        firstFooterPart.Footer = new Footer(创建页脚段落(JustificationValues.Right, rightChars: 1));
+
         插入节引用(sectionProperties, new FooterReference
         {
             Type = HeaderFooterValues.Default,
@@ -193,6 +189,12 @@ public sealed class GovHeaderFooterService
             Type = HeaderFooterValues.Even,
             Id = mainPart.GetIdOfPart(evenFooterPart)
         });
+
+        插入节引用(sectionProperties, new FooterReference
+        {
+            Type = HeaderFooterValues.First,
+            Id = mainPart.GetIdOfPart(firstFooterPart)
+        });
     }
 
     private static Paragraph 创建页脚段落(JustificationValues alignment, int leftChars = 0, int rightChars = 0)
@@ -202,61 +204,14 @@ public sealed class GovHeaderFooterService
         GovOpenXmlHelper.设置段落缩进(paragraph, leftChars: leftChars, rightChars: rightChars);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = alignment };
-        GovOpenXmlHelper.添加页码域(paragraph, "Times New Roman", "28");
+        GovOpenXmlHelper.添加页码域(paragraph, "宋体", "28");
 
         return paragraph;
     }
 
-    private static bool 是版记节(GovSectionContext section)
+    private static List<SectionProperties> 构建分节(Body body)
     {
-        var text = string.Join(Environment.NewLine, section.Texts).Trim();
-        if (string.IsNullOrWhiteSpace(text))
-            return true;
-
-        if (section.Texts.Count > 6)
-            return false;
-
-        return text.Contains("抄送", StringComparison.Ordinal) ||
-               text.Contains("印发", StringComparison.Ordinal) ||
-               text.Contains("主送", StringComparison.Ordinal);
-    }
-
-    private static List<GovSectionContext> 构建分节(Body body)
-    {
-        var sections = new List<GovSectionContext>();
-        var texts = new List<string>();
-        var currentSectPr = body.GetFirstChild<SectionProperties>();
-
-        foreach (var element in body.ChildElements)
-        {
-            if (element is Paragraph paragraph)
-            {
-                texts.Add(GovOpenXmlHelper.段落文本(paragraph).Trim());
-                var paraSectPr = paragraph.ParagraphProperties?.SectionProperties;
-                if (paraSectPr != null)
-                {
-                    sections.Add(new GovSectionContext(paraSectPr, texts.Where(x => !string.IsNullOrWhiteSpace(x)).ToList()));
-                    texts = [];
-                }
-            }
-            else if (element is Table table)
-            {
-                texts.Add(table.InnerText?.Trim() ?? string.Empty);
-            }
-            else if (element is SectionProperties bodySectPr)
-            {
-                currentSectPr = bodySectPr;
-                sections.Add(new GovSectionContext(bodySectPr, texts.Where(x => !string.IsNullOrWhiteSpace(x)).ToList()));
-                texts = [];
-            }
-        }
-
-        if (sections.Count == 0 && currentSectPr != null)
-        {
-            sections.Add(new GovSectionContext(currentSectPr, texts.Where(x => !string.IsNullOrWhiteSpace(x)).ToList()));
-        }
-
-        return sections.DistinctBy(x => x.SectionProperties).ToList();
+        return body.Descendants<SectionProperties>().Distinct().ToList();
     }
 
     private static void 插入节引用(SectionProperties sectionProperties, OpenXmlElement reference)
@@ -290,7 +245,7 @@ public sealed class GovHeaderFooterService
         {
             foreach (var headerPart in document.MainDocumentPart.HeaderParts)
             {
-                foreach (var e in headerPart.Header.Descendants<EvenAndOddHeaders>().ToList())
+                foreach (var e in (headerPart.Header?.Descendants<EvenAndOddHeaders>() ?? []).ToList())
                     e.Remove();
             }
         }
@@ -300,12 +255,9 @@ public sealed class GovHeaderFooterService
         {
             foreach (var footerPart in document.MainDocumentPart.FooterParts)
             {
-                foreach (var e in footerPart.Footer.Descendants<EvenAndOddHeaders>().ToList())
+                foreach (var e in (footerPart.Footer?.Descendants<EvenAndOddHeaders>() ?? []).ToList())
                     e.Remove();
             }
         }
     }
 }
-
-public sealed record GovSectionContext(SectionProperties SectionProperties, List<string> Texts);
-

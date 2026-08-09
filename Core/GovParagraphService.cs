@@ -1,4 +1,4 @@
-using DocumentFormat.OpenXml.Wordprocessing;
+﻿using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace GBT9704_2012排版工具.Core;
 
@@ -33,12 +33,11 @@ public sealed class GovParagraphService
             var text = GovOpenXmlHelper.提取可见文本(paragraph).Trim();
             var isEmpty = string.IsNullOrWhiteSpace(text);
 
-            GovOpenXmlHelper.清理段落污染(paragraph);
-            GovOpenXmlHelper.设置段落行距(paragraph, 固定行距);
+            if (structure.文号段索引.Count > 0 && i < structure.文号段索引.Min())
+                continue;
 
             if (isEmpty)
             {
-                格式化空段落(paragraph);
                 continue;
             }
 
@@ -50,116 +49,106 @@ public sealed class GovParagraphService
                 跳过不安全段落数++;
                 System.Diagnostics.Trace.WriteLine(
                     $"[GovParagraphService] 第 {i} 段含高风险结构，已跳过文本重写：{text}");
+                continue;
             }
+
+            GovOpenXmlHelper.设置段落行距(paragraph, 固定行距);
 
             if (structure.标题段索引.Contains(i))
             {
-                格式化标题区(paragraph, text, 可重写文本);
+                格式化标题区(paragraph);
                 continue;
             }
 
             if (structure.文号段索引.Contains(i))
             {
-                格式化文号(paragraph, text, 可重写文本);
+                格式化文号(paragraph);
                 continue;
             }
 
             if (structure.主送机关段索引.Contains(i))
             {
-                格式化主送机关(paragraph, text, 可重写文本);
+                格式化主送机关(paragraph);
                 continue;
             }
 
             if (structure.日期段索引.Contains(i))
             {
-                格式化日期(paragraph, text, 可重写文本);
+                格式化日期(paragraph);
                 continue;
             }
 
             if (structure.附件段索引.Contains(i))
             {
-                格式化附件(paragraph, text, 可重写文本);
+                格式化附件(paragraph);
                 continue;
             }
 
             if (structure.版记段索引.Contains(i))
             {
-                格式化版记(paragraph, text, 可重写文本);
+                格式化版记(paragraph);
                 continue;
             }
 
             if (structure.标题级别映射.TryGetValue(i, out var level))
             {
-                格式化正文标题(paragraph, text, level, 可重写文本);
+                格式化正文标题(paragraph, level);
                 continue;
             }
 
-            格式化正文(paragraph, text, 可重写文本);
+            格式化正文(paragraph);
         }
     }
 
-    private static void 格式化空段落(Paragraph paragraph)
-    {
-        GovOpenXmlHelper.设置段落缩进(paragraph);
-        var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
-        pPr.Justification = new Justification { Val = JustificationValues.Left };
-    }
-
-    private static void 格式化标题区(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化标题区(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Center };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 标题字体, "Times New Roman", 标题字号, bold: false);
+        格式化运行(paragraph, 标题字体, "Times New Roman", 标题字号);
     }
 
-    private static void 格式化文号(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化文号(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
-        pPr.Justification = new Justification { Val = JustificationValues.Right };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 正文字体, 西文字体, 正文字号);
+        pPr.Justification = new Justification { Val = JustificationValues.Center };
+        格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
     }
 
-    private static void 格式化主送机关(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化主送机关(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Left };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 正文字体, 西文字体, 正文字号);
+        格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
     }
 
-    private static void 格式化日期(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化日期(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph, rightChars: 4);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Right };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 正文字体, 西文字体, 正文字号);
+        格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
     }
 
-    private static void 格式化附件(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化附件(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph, leftChars: 2);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Left };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 正文字体, 西文字体, 正文字号);
+        格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
     }
 
-    private static void 格式化版记(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化版记(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Left };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 正文字体, 西文字体, "28");
+        格式化运行(paragraph, 正文字体, 西文字体, "28");
     }
 
-    private static void 格式化正文标题(Paragraph paragraph, string text, int level, bool 可重写文本)
+    private static void 格式化正文标题(Paragraph paragraph, int level)
     {
         // GB/T 9704-2012: 层次标题（一、（一）等）与正文一样左空二字
         GovOpenXmlHelper.设置段落缩进(paragraph, firstLineChars: 2);
@@ -175,17 +164,20 @@ public sealed class GovParagraphService
 
         // GB/T 9704-2012: 第一层黑体，第二层楷体，第三四层仿宋。不加粗，避免黑体在Word中触发伪粗体(Fake Bold)发虚
         var bold = false;
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, font, 西文字体, 正文字号, bold);
+        格式化运行(paragraph, font, 西文字体, 正文字号, bold);
     }
 
-    private static void 格式化正文(Paragraph paragraph, string text, bool 可重写文本)
+    private static void 格式化正文(Paragraph paragraph)
     {
         GovOpenXmlHelper.设置段落缩进(paragraph, firstLineChars: 2);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Both };
-        if (可重写文本)
-            GovOpenXmlHelper.替换段落文本(paragraph, text, 正文字体, 西文字体, 正文字号);
+        格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
+    }
+
+    private static void 格式化运行(Paragraph paragraph, string 中文字体, string latinFont, string fontSize, bool bold = false)
+    {
+        foreach (var run in GovOpenXmlHelper.获取文本运行(paragraph))
+            GovOpenXmlHelper.设置运行格式(run, 中文字体, latinFont, fontSize, bold);
     }
 }
-

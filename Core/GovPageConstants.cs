@@ -1,4 +1,4 @@
-namespace GBT9704_2012排版工具.Core;
+﻿namespace GBT9704_2012排版工具.Core;
 
 /// <summary>
 /// GB/T 9704—2012 页面与版心常量（单位：缇/twips）。

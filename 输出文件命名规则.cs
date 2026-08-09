@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 
 namespace GBT9704_2012排版工具;
 

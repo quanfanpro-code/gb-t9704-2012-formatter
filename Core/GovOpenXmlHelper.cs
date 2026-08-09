@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -16,7 +16,7 @@ public static class GovOpenXmlHelper
         if (string.IsNullOrWhiteSpace(text))
             return string.Empty;
 
-        return 零宽字符正则.Replace(text, "")
+        var normalized = 零宽字符正则.Replace(text, "")
             .Replace("\u00A0", " ")
             .Replace("\u3000", " ")
             .Replace("\t", " ")
@@ -25,8 +25,9 @@ public static class GovOpenXmlHelper
             .Replace("．", ".")
             .Replace("－", "-")
             .Replace("—", "-")
-            .Replace("　", " ")
-            .Pipe(x => 空白压缩.Replace(x, ""))
+            .Replace("　", " ");
+
+        return 空白压缩.Replace(normalized, "")
             .Replace("（", "(")
             .Replace("）", ")")
             .Replace("：", ":")
@@ -68,36 +69,6 @@ public static class GovOpenXmlHelper
     {
         paragraph.ParagraphProperties ??= new ParagraphProperties();
         return paragraph.ParagraphProperties;
-    }
-
-    /// <summary>
-    /// 删除段落内除 pPr 外的一切子元素（含 Drawing/Hyperlink/书签/批注/域等）。
-    /// 调用方必须先过 结构安全分析器.段落可安全重写，确认不含高风险结构后才能调用。
-    /// </summary>
-    public static void 清理段落内容(Paragraph paragraph)
-    {
-        foreach (var child in paragraph.ChildElements.Where(x => x is not ParagraphProperties).ToList())
-        {
-            child.Remove();
-        }
-    }
-
-    public static void 清理段落污染(Paragraph paragraph)
-    {
-        var pPr = 确保段落属性(paragraph);
-        pPr.GetFirstChild<Tabs>()?.Remove();
-        pPr.GetFirstChild<NumberingProperties>()?.Remove();
-        pPr.GetFirstChild<ParagraphStyleId>()?.Remove();
-        pPr.GetFirstChild<ContextualSpacing>()?.Remove();
-        pPr.GetFirstChild<MirrorIndents>()?.Remove();
-        pPr.GetFirstChild<SuppressAutoHyphens>()?.Remove();
-        pPr.GetFirstChild<SuppressLineNumbers>()?.Remove();
-        pPr.GetFirstChild<WordWrap>()?.Remove();
-        pPr.GetFirstChild<TextDirection>()?.Remove();
-        pPr.GetFirstChild<TextAlignment>()?.Remove();
-        if (pPr.KeepNext != null) pPr.KeepNext.Remove();
-        if (pPr.KeepLines != null) pPr.KeepLines.Remove();
-        if (pPr.PageBreakBefore != null) pPr.PageBreakBefore.Remove();
     }
 
     public static void 设置中文西文字体(OpenXmlElement runPropertiesElement, string eastAsiaFont, string latinFont)
@@ -199,18 +170,6 @@ public static class GovOpenXmlHelper
         pPr.Indentation = ind;
     }
 
-    /// <summary>
-    /// 整体重写段落文本（内部调用 清理段落内容，会删除 Drawing/Hyperlink/书签/批注/域等）。
-    /// 调用方必须先过 结构安全分析器.段落可安全重写，确认不含高风险结构后才能调用。
-    /// </summary>
-    public static void 替换段落文本(Paragraph paragraph, string text, string eastAsiaFont, string latinFont, string fontSize, bool bold = false)
-    {
-        清理段落内容(paragraph);
-        var run = new Run(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
-        设置运行格式(run, eastAsiaFont, latinFont, fontSize, bold);
-        paragraph.AppendChild(run);
-    }
-
     public static int 解析样式标题级别(MainDocumentPart? mainPart, Paragraph paragraph)
     {
         var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
@@ -282,44 +241,6 @@ public static class GovOpenXmlHelper
         paragraph.Append(dashRight);
     }
 
-    public static void 合并相邻运行(Paragraph paragraph)
-    {
-        var runs = paragraph.Elements<Run>().ToList();
-        if (runs.Count < 2)
-            return;
-
-        for (var i = 0; i < runs.Count - 1; i++)
-        {
-            var current = runs[i];
-            var next = runs[i + 1];
-
-            if (!可合并文本运行(current) || !可合并文本运行(next))
-                continue;
-
-            if (!运行格式一致(current, next))
-                continue;
-
-            var currentText = current.GetFirstChild<Text>()!;
-            var nextText = next.GetFirstChild<Text>()!;
-            currentText.Text += nextText.Text;
-            currentText.Space = currentText.Space?.Value == SpaceProcessingModeValues.Preserve ||
-                                nextText.Space?.Value == SpaceProcessingModeValues.Preserve
-                ? SpaceProcessingModeValues.Preserve
-                : null;
-            next.Remove();
-            runs.RemoveAt(i + 1);
-            i--;
-        }
-    }
-
-    public static void 合并文档相邻运行(WordprocessingDocument document)
-    {
-        foreach (var paragraph in 获取全部段落(document))
-        {
-            合并相邻运行(paragraph);
-        }
-    }
-
     private static void 追加可见文本(OpenXmlElement element, StringBuilder builder)
     {
         switch (element)
@@ -363,50 +284,4 @@ public static class GovOpenXmlHelper
         }
     }
 
-    private static bool 可合并文本运行(Run run)
-    {
-        // 保守方案：仅恰含一个 w:t 的纯文本运行可合并。
-        // 含多个 w:t 的运行若只拼第一个就 Remove，其余文本会被静默删除，故不合并。
-        return run.Elements<Text>().Count() == 1 &&
-               run.ChildElements.All(x => x is RunProperties or Text);
-    }
-
-    private static bool 运行格式一致(Run left, Run right)
-    {
-        var leftProps = left.RunProperties?.OuterXml ?? string.Empty;
-        var rightProps = right.RunProperties?.OuterXml ?? string.Empty;
-        return string.Equals(leftProps, rightProps, StringComparison.Ordinal);
-    }
-
-    private static IEnumerable<Paragraph> 获取全部段落(WordprocessingDocument document)
-    {
-        if (document.MainDocumentPart?.Document?.Body != null)
-        {
-            foreach (var paragraph in document.MainDocumentPart.Document.Body.Descendants<Paragraph>())
-            {
-                yield return paragraph;
-            }
-        }
-
-        foreach (var headerPart in document.MainDocumentPart?.HeaderParts ?? [])
-        {
-            foreach (var paragraph in headerPart.Header?.Descendants<Paragraph>() ?? [])
-            {
-                yield return paragraph;
-            }
-        }
-
-        foreach (var footerPart in document.MainDocumentPart?.FooterParts ?? [])
-        {
-            foreach (var paragraph in footerPart.Footer?.Descendants<Paragraph>() ?? [])
-            {
-                yield return paragraph;
-            }
-        }
-    }
-    public static T Pipe<T>(this T value, Func<T, T> transform) => transform(value);
-}
-
-file static class 文本管道扩展
-{
 }

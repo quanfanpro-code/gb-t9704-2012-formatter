@@ -1,4 +1,4 @@
-namespace GBT9704_2012排版工具.Core;
+﻿namespace GBT9704_2012排版工具.Core;
 
 public sealed record GovRuleDefinition(
     string Code,
@@ -8,13 +8,7 @@ public sealed record GovRuleDefinition(
 
 public static class GovRuleCatalog
 {
-    private static IReadOnlyList<GovDocumentKind> 所有文种 { get; } =
-    [
-        GovDocumentKind.普通公文,
-        GovDocumentKind.信函,
-        GovDocumentKind.命令,
-        GovDocumentKind.纪要
-    ];
+    private static IReadOnlyList<GovDocumentKind> 所有文种 { get; } = [GovDocumentKind.普通公文];
 
     public static readonly GovRuleDefinition 正文存在性 = new(
         "BODY_MISSING",
@@ -106,9 +100,6 @@ public static class GovRuleCatalog
 
     public static IReadOnlyList<GovRuleDefinition> GetApplicableRules(GovDocumentKind? kind)
     {
-        if (kind == null)
-            return All.Where(x => x.DocumentKinds.Count == 4).ToList();
-
-        return All.Where(x => x.DocumentKinds.Contains(kind.Value)).ToList();
+        return All;
     }
 }

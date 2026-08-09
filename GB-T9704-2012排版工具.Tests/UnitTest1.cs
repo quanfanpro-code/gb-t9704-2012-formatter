@@ -1,21 +1,19 @@
-using GBT9704_2012排版工具;
+﻿using GBT9704_2012排版工具;
 using GBT9704_2012排版工具.Core;
+using DocumentFormat.OpenXml.Wordprocessing;
+using M = DocumentFormat.OpenXml.Math;
 
 namespace GB_T9704_2012排版工具.Tests;
 
 public class 党政机关规则测试
 {
-    [Theory]
-    [InlineData("关于印发XX实施方案的通知", GovDocumentKind.普通公文, "未命中特定格式特征，按普通公文处理。")]
-    [InlineData("关于商洽XX事项的函", GovDocumentKind.信函, "命中“函/复函/商洽/答复”等信函特征词。")]
-    [InlineData("国务院令第777号", GovDocumentKind.命令, "命中“令/命令/第×号”等命令文种特征。")]
-    [InlineData("XX专题会议纪要", GovDocumentKind.纪要, "命中“纪要/会议纪要”等纪要特征词。")]
-    public void 文种识别应命中预期文种(string text, GovDocumentKind expectedKind, string expectedReasonContains)
+    [Fact]
+    public void 程序只处理一般普通公文()
     {
-        var result = GovStructureAnalyzer.检测文种(text);
+        var result = GovStructureAnalyzer.检测文种("关于印发实施方案的通知");
 
-        Assert.Equal(expectedKind, result.Kind);
-        Assert.Contains(expectedReasonContains, result.Reason);
+        Assert.Equal(GovDocumentKind.普通公文, result.Kind);
+        Assert.Contains("仅处理一般普通公文", result.Reason);
     }
 
     [Theory]
@@ -29,23 +27,6 @@ public class 党政机关规则测试
         var actual = GovStructureAnalyzer.检测标题级别(text);
 
         Assert.Equal(expectedLevel, actual);
-    }
-
-    [Theory]
-    [InlineData("1234", false, "1,234.00")]
-    [InlineData("-1234.5", false, "-1,234.50")]
-    [InlineData("(1234.5)", false, "-1,234.50")]
-    [InlineData("1,234.5", false, "1,234.50")]
-    [InlineData("不是数字", false, null)]
-    [InlineData("0123", false, null)]
-    [InlineData("3", true, null)]
-    [InlineData("123)", false, null)]
-    [InlineData("(123", false, null)]
-    public void 表格数字格式化应统一千分位和两位小数且保留受保护值(string rawText, bool isFirstColumn, string? expectedText)
-    {
-        var actual = GovTableService.格式化纯数字文本(rawText, isFirstColumn);
-
-        Assert.Equal(expectedText, actual);
     }
 
     [Fact]
@@ -63,14 +44,10 @@ public class 党政机关规则测试
         Assert.False(输出文件命名规则.是已排版文件(@"C:\Temp\通知.docx"));
     }
 
-    [Theory]
-    [InlineData(GovDocumentKind.普通公文)]
-    [InlineData(GovDocumentKind.信函)]
-    [InlineData(GovDocumentKind.命令)]
-    [InlineData(GovDocumentKind.纪要)]
-    public void 审计适用规则不应宣称尚未实现的文种专属校验(GovDocumentKind kind)
+    [Fact]
+    public void 审计规则只适用于一般普通公文()
     {
-        var codes = GovRuleCatalog.GetApplicableRules(kind).Select(rule => rule.Code).ToList();
+        var codes = GovRuleCatalog.GetApplicableRules(GovDocumentKind.普通公文).Select(rule => rule.Code).ToList();
 
         Assert.Contains("OPENXML_SCHEMA", codes);
         Assert.Contains("PAGE_SIZE", codes);
@@ -78,5 +55,21 @@ public class 党政机关规则测试
         Assert.DoesNotContain("DOC_LETTER_LAYOUT", codes);
         Assert.DoesNotContain("DOC_ORDER_SERIAL", codes);
         Assert.DoesNotContain("DOC_MEMO_TITLE", codes);
+    }
+
+    [Fact]
+    public void 含脚注引用的段落不得自动改写()
+    {
+        var paragraph = new Paragraph(new Run(new Text("说明"), new FootnoteReference { Id = 1 }));
+
+        Assert.False(结构安全分析器.段落可安全重写(paragraph));
+    }
+
+    [Fact]
+    public void 含公式的段落不得自动改写()
+    {
+        var paragraph = new Paragraph(new M.OfficeMath(new M.Run(new M.Text("x=1"))));
+
+        Assert.False(结构安全分析器.段落可安全重写(paragraph));
     }
 }

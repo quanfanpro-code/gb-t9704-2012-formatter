@@ -1,5 +1,4 @@
-using System.IO;
-using DocumentFormat.OpenXml;
+﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -11,40 +10,41 @@ public sealed class GovValidationService
     // 页面常量统一引用 GovPageConstants，避免与排版服务双份硬编码
 
     private readonly List<string> _warnings = [];
+    private readonly List<string> _errors = [];
 
     /// <summary>校验过程中收集的所有警告。</summary>
     public IReadOnlyList<string> Warnings => _warnings;
+    public IReadOnlyList<string> Errors => _errors;
+    public bool HasBlockingErrors => _errors.Count > 0;
 
-    public void 验证(WordprocessingDocument document, string outputPath, GovDocumentStructure? structure = null)
+    public void 验证(WordprocessingDocument document)
     {
         _warnings.Clear();
+        _errors.Clear();
 
         if (document.MainDocumentPart?.Document?.Body == null)
         {
-            _warnings.Add("文档缺少正文。");
+            _errors.Add("文档缺少正文。");
             return;
         }
 
         var body = document.MainDocumentPart.Document.Body;
         if (body.ChildElements.Count == 0)
         {
-            _warnings.Add("文档正文为空。");
+            _errors.Add("文档正文为空。");
             return;
         }
 
-        // Schema 校验（仅告警）
         var validator = new OpenXmlValidator(FileFormatVersions.Microsoft365);
         foreach (var err in validator.Validate(document).Take(10))
-            _warnings.Add($"Schema: {err.Description}");
+            _errors.Add($"OpenXML 结构错误：{err.Description}");
 
         var text = GovOpenXmlHelper.提取归一化可见文本(body);
         if (string.IsNullOrWhiteSpace(text))
-            _warnings.Add("文档未识别到可用正文内容。");
+            _errors.Add("文档未识别到可用正文内容。");
 
         校验页面规则(body);
 
-        // 注意：File.Copy 刚复制出的输出文件在 WordprocessingDocument Dispose 前尚未完全落盘，
-        // 不能在此处做 File.Exists 判断；可打开性验证请用 输出文件可正常打开，在 Dispose 之后由 pipeline 调用。
     }
 
     private void 校验页面规则(Body body)
@@ -111,19 +111,4 @@ public sealed class GovValidationService
             _warnings.Add("版心行距栅格：不符合 22 行/面要求。");
     }
 
-    /// <summary>
-    /// 试开输出文件验证可正常打开。供 pipeline 在 WordprocessingDocument Dispose 之后调用（此时内容才真正落盘）。
-    /// </summary>
-    public static bool 输出文件可正常打开(string outputPath)
-    {
-        try
-        {
-            using var document = WordprocessingDocument.Open(outputPath, false);
-            return document.MainDocumentPart?.Document?.Body != null;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }

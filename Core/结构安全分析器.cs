@@ -1,4 +1,4 @@
-using DocumentFormat.OpenXml;
+﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace GBT9704_2012排版工具.Core;
@@ -11,17 +11,6 @@ public static class 结构安全分析器
             return false;
 
         return !存在高风险结构(paragraph);
-    }
-
-    public static bool 单元格可安全重写(TableCell? cell)
-    {
-        if (cell == null)
-            return false;
-
-        if (cell.Elements<Paragraph>().Skip(1).Any())
-            return false;
-
-        return !存在高风险结构(cell);
     }
 
     private static bool 存在高风险结构(OpenXmlElement element)
@@ -41,6 +30,12 @@ public static class 结构安全分析器
         if (element.Descendants<FieldCode>().Any() || element.Descendants<SimpleField>().Any())
             return true;
         if (element.Descendants<Drawing>().Any())
+            return true;
+        if (element.Descendants<FootnoteReference>().Any() || element.Descendants<EndnoteReference>().Any())
+            return true;
+        if (element.Descendants().Any(x =>
+                x.NamespaceUri.Contains("officeDocument/2006/math", StringComparison.Ordinal) ||
+                x.LocalName is "object" or "pict" or "txbxContent" or "altChunk"))
             return true;
         if (element.Descendants<SdtRun>().Any() || element.Descendants<SdtBlock>().Any() || element.Descendants<SdtCell>().Any())
             return true;
