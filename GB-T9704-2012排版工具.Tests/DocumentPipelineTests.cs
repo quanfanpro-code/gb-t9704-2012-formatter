@@ -125,7 +125,7 @@ public sealed class 文档流水线测试
         var existing = Path.Combine(Path.GetDirectoryName(input)!, "已有结果.docx");
         File.WriteAllText(existing, "不得覆盖");
 
-        var result = new GovDocumentPipeline().Process(new RequestContract
+        var result = new GovDocumentPipeline(() => []).Process(new RequestContract
         {
             InputPath = input,
             OutputPath = existing
@@ -163,7 +163,8 @@ public sealed class 文档流水线测试
 
     private static ResponseContract 处理(string input)
     {
-        return new GovDocumentPipeline().Process(new RequestContract { InputPath = input });
+        // 文档结构测试不依赖运行机器的字体安装情况。
+        return new GovDocumentPipeline(() => []).Process(new RequestContract { InputPath = input });
     }
 
     private static string 创建样本文档(Action<Body> buildBody, bool addHeaderAndFooters = false)

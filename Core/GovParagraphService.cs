@@ -194,7 +194,7 @@ public sealed class GovParagraphService
             if (part.Styles.Elements<Style>().Any(s => s.StyleId == id)) continue;
             part.Styles.Append(new Style(new StyleName { Val = $"公文层次标题{level}" },
                 new StyleParagraphProperties(new KeepNext(), new OutlineLevel { Val = level - 1 }))
-                { Type = StyleValues.Paragraph, StyleId = id, CustomStyle = true });
+            { Type = StyleValues.Paragraph, StyleId = id, CustomStyle = true });
         }
     }
 

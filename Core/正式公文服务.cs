@@ -177,9 +177,14 @@ public static class 正式公文服务
         var props = new TableProperties();
         props.AddChild(new TablePositionProperties
         {
-            VerticalAnchor = VerticalAnchorValues.Margin, HorizontalAnchor = HorizontalAnchorValues.Margin,
-            TablePositionX = 0, TablePositionYAlignment = VerticalAlignmentValues.Bottom,
-            TopFromText = 280, BottomFromText = 0, LeftFromText = 0, RightFromText = 0
+            VerticalAnchor = VerticalAnchorValues.Margin,
+            HorizontalAnchor = HorizontalAnchorValues.Margin,
+            TablePositionX = 0,
+            TablePositionYAlignment = VerticalAlignmentValues.Bottom,
+            TopFromText = 280,
+            BottomFromText = 0,
+            LeftFromText = 0,
+            RightFromText = 0
         });
         props.AddChild(new TableWidth { Type = TableWidthUnitValues.Dxa, Width = "8844" });
         props.AddChild(new TableBorders(new TopBorder { Val = BorderValues.Single, Size = 8 }, new BottomBorder { Val = BorderValues.Single, Size = 8 }, new InsideHorizontalBorder { Val = BorderValues.Single, Size = 6 }));
