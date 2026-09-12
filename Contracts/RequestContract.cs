@@ -8,5 +8,7 @@ public sealed class RequestContract
     public 公文要素? 要素 { get; set; }
     public double 套打红线距纸顶毫米 { get; set; } = 110;
     public List<公文检查项> 检查记录 { get; } = [];
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CancellationToken CancellationToken { get; set; }
 }
 

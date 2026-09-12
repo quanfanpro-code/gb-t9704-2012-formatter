@@ -25,6 +25,7 @@ public static class 正式公文服务
         var migrate = new HashSet<Paragraph>();
         foreach (var p in ps.Take(firstTitle))
         {
+            request.CancellationToken.ThrowIfCancellationRequested();
             var t = 公文要素服务.文本(p);
             if (!结构安全分析器.段落可安全重写(p))
                 throw new InvalidOperationException("原稿版头包含复杂对象，不能自动拆除或叠加红头，请先核对该对象。");
@@ -35,6 +36,7 @@ public static class 正式公文服务
         foreach (var index in structure.主送机关段索引) migrate.Add(ps[index]);
         foreach (var p in ps)
         {
+            request.CancellationToken.ThrowIfCancellationRequested();
             var t = 公文要素服务.文本(p);
             if (t.Length > 0 && (t == original.署名 || t == original.成文日期 || t == original.抄送 ||
                 (original.印发机关.Length > 0 && t.StartsWith(original.印发机关) && t.EndsWith("印发")))) migrate.Add(p);
@@ -107,6 +109,7 @@ public static class 正式公文服务
         var remaining = body.Elements<Paragraph>().ToArray();
         for (var i = 0; i < remaining.Length; i++)
         {
+            request.CancellationToken.ThrowIfCancellationRequested();
             var label = remaining[i];
             if (!Regex.IsMatch(公文要素服务.文本(label), @"^附件\s*\d*$")) continue;
             if (!结构安全分析器.段落可安全重写(label)) continue;

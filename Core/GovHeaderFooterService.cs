@@ -8,7 +8,7 @@ public sealed class GovHeaderFooterService
 {
     // 页面常量统一引用 GovPageConstants，避免与校验服务双份硬编码
 
-    public void 格式化(WordprocessingDocument document)
+    public void 格式化(WordprocessingDocument document, CancellationToken cancellationToken = default)
     {
         var mainPart = document.MainDocumentPart ?? throw new InvalidOperationException("文档缺少主部件。");
         var mainDocument = mainPart.Document ?? throw new InvalidOperationException("文档缺少主文档。");
@@ -23,6 +23,7 @@ public sealed class GovHeaderFooterService
 
         foreach (var section in 构建分节(body))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             配置页面(section);
             复制偶数页页眉(section, mainPart);
             重建页脚(section, mainPart);

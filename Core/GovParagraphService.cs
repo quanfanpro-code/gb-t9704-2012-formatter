@@ -21,7 +21,7 @@ public sealed class GovParagraphService
     /// </summary>
     public int 跳过不安全段落数 { get; private set; }
 
-    public void 格式化(Body body, GovDocumentStructure structure)
+    public void 格式化(Body body, GovDocumentStructure structure, CancellationToken cancellationToken = default)
     {
         跳过不安全段落数 = 0;
 
@@ -31,6 +31,7 @@ public sealed class GovParagraphService
 
         for (var i = 0; i < paragraphs.Count; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var paragraph = paragraphs[i];
             var text = GovOpenXmlHelper.提取可见文本(paragraph).Trim();
             var isEmpty = string.IsNullOrWhiteSpace(text);

@@ -39,6 +39,8 @@ public sealed class GovDocumentPipeline
             outputPath = string.IsNullOrWhiteSpace(request.OutputPath)
                 ? 输出文件命名规则.生成输出路径(request.InputPath)
                 : request.OutputPath;
+            request.OutputPath = outputPath;
+            request.CancellationToken.ThrowIfCancellationRequested();
 
             // 输入输出同路径时复制等于自我覆盖，直接拒绝
             if (string.Equals(
@@ -74,15 +76,18 @@ public sealed class GovDocumentPipeline
                 if (request.模式 != 排版模式.普通材料 && 要素警告.Count > 0)
                     throw new InvalidOperationException(string.Join("\n", 要素警告));
 
-                _paragraphService.格式化(body, structure);
+                request.CancellationToken.ThrowIfCancellationRequested();
+                _paragraphService.格式化(body, structure, request.CancellationToken);
                 _paragraphService.补充层次样式(mainPart);
                 _tableService.格式化(body);
-                _headerFooterService.格式化(document);
+                _headerFooterService.格式化(document, request.CancellationToken);
                 if (request.模式 != 排版模式.普通材料)
                     正式公文服务.格式化(document, request);
+                request.CancellationToken.ThrowIfCancellationRequested();
                 mainPart.Document.Save();
             }
 
+            request.CancellationToken.ThrowIfCancellationRequested();
             GovDocumentStructure finalStructure;
             try
             {
@@ -104,6 +109,7 @@ public sealed class GovDocumentPipeline
                 return 构建失败结果(request, workingPath, finalStructure, finalStructure.文种结果, message, "OPENXML_SCHEMA", "最终校验");
             }
 
+            request.CancellationToken.ThrowIfCancellationRequested();
             File.Move(workingPath, outputPath, overwrite: false);
             workingPath = string.Empty;
             request.OutputPath = outputPath;
@@ -139,6 +145,10 @@ public sealed class GovDocumentPipeline
                 };
             }
             return result with { AuditPath = auditPath };
+        }
+        catch (OperationCanceledException)
+        {
+            return 构建失败结果(request, workingPath, currentStructure, currentKind, "处理已取消，未发布当前成稿。", "CANCELLED", "取消处理");
         }
         catch (Exception ex)
         {
@@ -179,7 +189,7 @@ public sealed class GovDocumentPipeline
             failureStage: failureStage,
             ruleCode: errorCode == "OPENXML_SCHEMA" ? "OPENXML_SCHEMA" : null,
             ruleName: errorCode == "OPENXML_SCHEMA" ? "OpenXML结构合法性" : null,
-            needsManualReview: true,
+            needsManualReview: errorCode != "CANCELLED",
             documentKind: kind?.Kind.ToString(),
             documentKindReason: kind?.Reason,
             attachmentCount: structure?.附件段索引.Count ?? 0,

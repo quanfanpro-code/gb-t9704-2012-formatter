@@ -201,11 +201,21 @@ public partial class MainWindow : FluentWindow
             if (File.Exists(path))
             {
                 if (token.IsCancellationRequested) return;
+                if (输出文件命名规则.是已排版文件(path))
+                {
+                    Dispatcher.Invoke(() => { AppendLog("所选文件是工具输出、失败件或临时文件，已跳过。", LogType.Warning); _statusText.Text = "已跳过"; });
+                    return;
+                }
                 Dispatcher.BeginInvoke(() => AppendLog($"开始处理文件：{path}"));
-                var result = 处理单个文件(path, outputDir);
+                var result = 处理单个文件(path, outputDir, token);
                 Dispatcher.Invoke(() =>
                 {
-                    if (result.Success)
+                    if (result.ErrorCode == "CANCELLED")
+                    {
+                        AppendLog(result.Message ?? "处理已取消。", LogType.Warning);
+                        _statusText.Text = "已取消";
+                    }
+                    else if (result.Success)
                     {
                         AppendLog($"输出文件：{result.OutputPath}", LogType.Success);
                         if (!string.IsNullOrWhiteSpace(result.AuditPath))
@@ -264,8 +274,9 @@ public partial class MainWindow : FluentWindow
                     var idx = i + 1;
                     try
                     {
-                        var result = 处理单个文件(file, outputDir);
+                        var result = 处理单个文件(file, outputDir, token);
                         batchAuditItems.Add(构建批量审计项(file, result));
+                        if (result.ErrorCode == "CANCELLED") break;
                         if (result.Success)
                             success++;
                         else
@@ -425,14 +436,15 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private ResponseContract 处理单个文件(string inputPath, string? outputDir)
+    private ResponseContract 处理单个文件(string inputPath, string? outputDir, CancellationToken token)
     {
         var request = new RequestContract
         {
             InputPath = inputPath,
             OutputPath = 输出文件命名规则.生成输出路径(inputPath, outputDir),
             模式 = _本次模式,
-            套打红线距纸顶毫米 = _本次套打高度
+            套打红线距纸顶毫米 = _本次套打高度,
+            CancellationToken = token
         };
 
         if (_本次模式 != 排版模式.普通材料)
@@ -508,7 +520,7 @@ public partial class MainWindow : FluentWindow
             result.HasPageNumberField,
             result.LandscapeSectionCount,
             result.ImprintCount,
-            result.Success ? (result.NeedsManualReview ? "人工复核" : "通过") : "阻断",
+            result.ErrorCode == "CANCELLED" ? "已取消" : result.Success ? (result.NeedsManualReview ? "人工复核" : "通过") : "阻断",
             result.FailureStage,
             result.RuleCode,
             result.RuleName,
