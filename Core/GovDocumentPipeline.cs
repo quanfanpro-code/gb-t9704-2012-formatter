@@ -12,6 +12,12 @@ public sealed class GovDocumentPipeline
     private readonly GovHeaderFooterService _headerFooterService = new();
     private readonly GovValidationService _validationService = new();
     private readonly GovAuditService _auditService = new();
+    private readonly Func<IReadOnlyList<string>> _检查字体;
+
+    public GovDocumentPipeline(Func<IReadOnlyList<string>>? 检查字体 = null)
+    {
+        _检查字体 = 检查字体 ?? new GovFontCheckService().获取缺失字体;
+    }
 
     public ResponseContract Process(RequestContract request)
     {
@@ -22,6 +28,8 @@ public sealed class GovDocumentPipeline
         GovDocumentStructure? currentStructure = null;
         var outputPath = request.OutputPath;
         var workingPath = string.Empty;
+        request.检查记录.Clear();
+        var 要素警告 = new List<string>();
 
         if (!File.Exists(request.InputPath))
             return ResponseContract.Fail($"输入文件不存在：{request.InputPath}");
@@ -59,9 +67,19 @@ public sealed class GovDocumentPipeline
                 currentStructure = structure;
                 currentKind = structure.文种结果;
 
+                要素警告 = 公文要素服务.检查(mainPart, request);
+                var 缺失字体 = _检查字体();
+                request.检查记录.Add(new("FONTS", "本机字体可用性", 缺失字体.Count == 0 ? "通过" : "需复核", 缺失字体.Count == 0 ? "已核对本机字体列表；实际渲染字体需另行 Word 实测。" : string.Join("、", 缺失字体)));
+                if (缺失字体.Count > 0) 要素警告.Add("缺失字体：" + string.Join("、", 缺失字体));
+                if (request.模式 != 排版模式.普通材料 && 要素警告.Count > 0)
+                    throw new InvalidOperationException(string.Join("\n", 要素警告));
+
                 _paragraphService.格式化(body, structure);
+                _paragraphService.补充层次样式(mainPart);
                 _tableService.格式化(body);
                 _headerFooterService.格式化(document);
+                if (request.模式 != 排版模式.普通材料)
+                    正式公文服务.格式化(document, request);
                 mainPart.Document.Save();
             }
 
@@ -72,6 +90,8 @@ public sealed class GovDocumentPipeline
                 var finalMainPart = finalDocument.MainDocumentPart ?? throw new InvalidOperationException("输出文档缺少主部件。");
                 finalStructure = _structureAnalyzer.分析(finalMainPart);
                 _validationService.验证(finalDocument);
+                request.检查记录.Add(new("OPENXML_SCHEMA", "OpenXML结构合法性", _validationService.HasBlockingErrors ? "失败" : "通过", string.Join("\n", _validationService.Errors)));
+                request.检查记录.Add(new("PAGE_SETUP", "页面参数", _validationService.Warnings.Count > 0 ? "需复核" : "通过", string.Join("\n", _validationService.Warnings)));
             }
             catch (Exception ex)
             {
@@ -88,6 +108,7 @@ public sealed class GovDocumentPipeline
             workingPath = string.Empty;
             request.OutputPath = outputPath;
             var 校验警告列表 = new List<string>(_validationService.Warnings);
+            校验警告列表.AddRange(要素警告);
             if (_paragraphService.跳过不安全段落数 > 0)
                 校验警告列表.Add($"跳过 {_paragraphService.跳过不安全段落数} 个含复杂结构的段落，内容和版式保持原样，请人工确认。");
             var 校验警告 = 校验警告列表.Count > 0

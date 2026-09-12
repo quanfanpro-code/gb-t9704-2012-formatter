@@ -19,4 +19,9 @@ public sealed record AuditSummaryContract(
     string? RuleName,
     bool NeedsManualReview,
     string? Message
-);
+)
+{
+    public string 排版模式 { get; init; } = "普通材料";
+    public bool Word实测已执行 { get; init; }
+    public IReadOnlyList<公文检查项> 实际检查记录 { get; init; } = [];
+}

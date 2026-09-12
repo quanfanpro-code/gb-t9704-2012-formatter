@@ -15,6 +15,8 @@ public partial class MainWindow : FluentWindow
     private CancellationTokenSource? _cts;
     private readonly GovAuditService _auditService = new();
     private FlowDocument _logDoc = null!;
+    private 排版模式 _本次模式;
+    private double _本次套打高度;
 
     private static readonly SolidColorBrush _最小化蓝 = new(System.Windows.Media.Color.FromArgb(0xFF, 0x1A, 0x73, 0xE8));
     private static readonly SolidColorBrush _最大化绿 = new(System.Windows.Media.Color.FromArgb(0xFF, 0x10, 0x7C, 0x10));
@@ -167,6 +169,16 @@ public partial class MainWindow : FluentWindow
             AppendLog($"检测到缺失字体：{string.Join("、", 缺失字体)}，用户选择继续。", LogType.Warning);
         }
 
+        _本次模式 = (排版模式)_modeBox.SelectedIndex;
+        _本次套打高度 = 110;
+        if (_本次模式 == 排版模式.套打 &&
+            (!double.TryParse(_printHeightBox.Text, out _本次套打高度) || !double.IsFinite(_本次套打高度) || _本次套打高度 is < 70 or > 150))
+        {
+            System.Windows.MessageBox.Show("请填写有效的纸顶至红线距离（70 至 150 毫米）。", "套打设置");
+            return;
+        }
+        _modeBox.IsEnabled = false;
+        _printHeightBox.IsEnabled = false;
         _处理中 = true;
         _cts = new CancellationTokenSource();
         _startButton.Content = "取消处理";
@@ -392,6 +404,8 @@ public partial class MainWindow : FluentWindow
             Dispatcher.Invoke(() =>
             {
                 _处理中 = false;
+                _modeBox.IsEnabled = true;
+                _printHeightBox.IsEnabled = true;
                 _startButton.Content = "开始处理";
                 _startButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
                 if (token.IsCancellationRequested)
@@ -416,8 +430,25 @@ public partial class MainWindow : FluentWindow
         var request = new RequestContract
         {
             InputPath = inputPath,
-            OutputPath = 输出文件命名规则.生成输出路径(inputPath, outputDir)
+            OutputPath = 输出文件命名规则.生成输出路径(inputPath, outputDir),
+            模式 = _本次模式,
+            套打红线距纸顶毫米 = _本次套打高度
         };
+
+        if (_本次模式 != 排版模式.普通材料)
+        {
+            using var source = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Open(inputPath, false);
+            var main = source.MainDocumentPart ?? throw new InvalidOperationException("文档缺少正文。");
+            request.要素 = 公文要素服务.读取(main);
+            var 原文 = string.Join(Environment.NewLine, main.Document!.Body!.Elements().Select(p => p.InnerText));
+            var accepted = Dispatcher.Invoke(() =>
+            {
+                if (_cts?.IsCancellationRequested == true) return false;
+                var dialog = new 公文要素窗口(inputPath, 原文, request.要素) { Owner = this };
+                return dialog.ShowDialog() == true;
+            });
+            if (!accepted) return ResponseContract.Fail("已取消本文件的要素确认，原稿未更改。", errorCode: "USER_CANCELLED");
+        }
 
         var pipeline = new GovDocumentPipeline();
         var result = pipeline.Process(request);
@@ -450,6 +481,12 @@ public partial class MainWindow : FluentWindow
 
         parts.Add($"原因：{result.Message ?? result.ErrorCode ?? "未知错误"}");
         return $"流水线返回失败：{string.Join("；", parts)}";
+    }
+
+    private void Mode_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_printHeightPanel is not null)
+            _printHeightPanel.Visibility = _modeBox.SelectedIndex == 2 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
     }
 
     private static string 构建失败摘要(ResponseContract result)

@@ -13,6 +13,8 @@ public sealed class 启动冒烟测试
             try
             {
                 var window = new GBT9704_2012排版工具.MainWindow();
+                var modes = window.FindName("_modeBox") as System.Windows.Controls.ComboBox;
+                if (modes?.Items.Count != 3) throw new InvalidOperationException("主窗口缺少三种排版选择");
                 window.Close();
             }
             catch (Exception ex)

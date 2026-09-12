@@ -87,6 +87,10 @@ public static class GovOpenXmlHelper
         fonts.HighAnsi = latinFont;
         fonts.ComplexScript = latinFont;
         fonts.EastAsia = eastAsiaFont;
+        fonts.AsciiTheme = null;
+        fonts.HighAnsiTheme = null;
+        fonts.EastAsiaTheme = null;
+        fonts.ComplexScriptTheme = null;
     }
 
     public static void 设置运行格式(Run run, string eastAsiaFont, string latinFont, string fontSize, bool bold = false)

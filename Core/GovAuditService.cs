@@ -32,8 +32,8 @@ public sealed class GovAuditService
             structure?.是否含页码字段 ?? false,
             structure?.横向节索引.Count ?? 0,
             structure?.版记段索引.Count ?? 0,
-            rules.Select(x => x.Code).ToList(),
-            rules.Select(x => x.Name).ToList(),
+            request.检查记录.Select(x => x.编号).Distinct().ToList(),
+            request.检查记录.Select(x => x.名称).Distinct().ToList(),
             matchedRules.Select(x => x.Code).ToList(),
             matchedRules.Select(x => x.Name).ToList(),
             response.Success ? (response.NeedsManualReview ? "人工复核" : "通过") : "阻断",
@@ -41,7 +41,12 @@ public sealed class GovAuditService
             response.RuleCode,
             response.RuleName,
             response.NeedsManualReview,
-            response.Message);
+            response.Message)
+        {
+            排版模式 = request.模式.ToString(),
+            实际检查记录 = request.检查记录.ToArray(),
+            Word实测已执行 = false
+        };
 
         var json = JsonSerializer.Serialize(summary, JsonOptions);
         File.WriteAllText(auditPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));

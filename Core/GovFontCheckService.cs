@@ -10,7 +10,8 @@ public sealed class GovFontCheckService
         "仿宋_GB2312",
         "楷体_GB2312",
         "黑体",
-        "宋体"
+        "宋体",
+        "Times New Roman"
     ];
 
     public IReadOnlyList<string> 获取缺失字体()

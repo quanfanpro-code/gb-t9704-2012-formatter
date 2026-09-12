@@ -49,7 +49,9 @@ public sealed class GovStructureAnalyzer
                 continue;
 
             var 允许版式特征 = structure.文号段索引.Count > 0;
-            if (!疑似标题段(mainPart, paragraphs[i], text, 允许版式特征))
+            var 首段长标题 = i == 标题起点 && text.Length <= 160 && text.StartsWith("关于") &&
+                !text.Contains('。') && 公文标题关键词.Any(k => text.EndsWith(k, StringComparison.Ordinal));
+            if (!首段长标题 && !疑似标题段(mainPart, paragraphs[i], text, 允许版式特征))
             {
                 if (已发现标题)
                     break;
@@ -106,6 +108,12 @@ public sealed class GovStructureAnalyzer
             if (是附件说明(text: 获取段落可见文本(paragraphs[i])))
             {
                 structure.附件段索引.Add(i);
+                structure.标题级别映射.Remove(i);
+            }
+            else if (i > 0 && structure.附件段索引.Contains(i - 1) && 三级标题正则.IsMatch(获取段落可见文本(paragraphs[i])))
+            {
+                structure.附件段索引.Add(i);
+                structure.标题级别映射.Remove(i);
             }
 
             if (是版记说明(获取段落可见文本(paragraphs[i])))

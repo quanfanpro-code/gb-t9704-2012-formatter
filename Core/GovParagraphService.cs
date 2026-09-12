@@ -1,5 +1,7 @@
 ﻿using DocumentFormat.OpenXml.Wordprocessing;
 
+using DocumentFormat.OpenXml.Packaging;
+
 namespace GBT9704_2012排版工具.Core;
 
 public sealed class GovParagraphService
@@ -53,6 +55,9 @@ public sealed class GovParagraphService
             }
 
             GovOpenXmlHelper.设置段落行距(paragraph, 固定行距);
+            paragraph.ParagraphProperties!.OverflowPunctuation = new OverflowPunctuation { Val = false };
+            paragraph.ParagraphProperties.AutoSpaceDE = new AutoSpaceDE { Val = false };
+            paragraph.ParagraphProperties.AutoSpaceDN = new AutoSpaceDN { Val = false };
 
             if (structure.标题段索引.Contains(i))
             {
@@ -134,8 +139,16 @@ public sealed class GovParagraphService
 
     private static void 格式化附件(Paragraph paragraph)
     {
-        GovOpenXmlHelper.设置段落缩进(paragraph, leftChars: 2);
+        var first = GovOpenXmlHelper.提取可见文本(paragraph).TrimStart().StartsWith("附件");
+        GovOpenXmlHelper.设置段落缩进(paragraph, leftChars: 6);
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
+        pPr.Indentation!.FirstLine = null;
+        pPr.Indentation.FirstLineChars = null;
+        pPr.Indentation.HangingChars = first ? 400 : 100;
+        pPr.OutlineLevel = null;
+        pPr.ParagraphStyleId = null;
+        pPr.KeepNext = new KeepNext();
+        if (first) pPr.SpacingBetweenLines!.Before = "578";
         pPr.Justification = new Justification { Val = JustificationValues.Left };
         格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
     }
@@ -164,7 +177,24 @@ public sealed class GovParagraphService
 
         // GB/T 9704-2012: 第一层黑体，第二层楷体，第三四层仿宋。不加粗，避免黑体在Word中触发伪粗体(Fake Bold)发虚
         var bold = false;
+        pPr.ParagraphStyleId = new ParagraphStyleId { Val = $"GBT9704Heading{level}" };
+        pPr.OutlineLevel = new OutlineLevel { Val = level - 1 };
+        pPr.KeepNext = new KeepNext();
         格式化运行(paragraph, font, 西文字体, 正文字号, bold);
+    }
+
+    public void 补充层次样式(MainDocumentPart main)
+    {
+        var part = main.StyleDefinitionsPart ?? main.AddNewPart<StyleDefinitionsPart>();
+        part.Styles ??= new Styles();
+        for (var level = 1; level <= 4; level++)
+        {
+            var id = $"GBT9704Heading{level}";
+            if (part.Styles.Elements<Style>().Any(s => s.StyleId == id)) continue;
+            part.Styles.Append(new Style(new StyleName { Val = $"公文层次标题{level}" },
+                new StyleParagraphProperties(new KeepNext(), new OutlineLevel { Val = level - 1 }))
+                { Type = StyleValues.Paragraph, StyleId = id, CustomStyle = true });
+        }
     }
 
     private static void 格式化正文(Paragraph paragraph)
@@ -173,6 +203,9 @@ public sealed class GovParagraphService
         var pPr = GovOpenXmlHelper.确保段落属性(paragraph);
         pPr.Justification = new Justification { Val = JustificationValues.Both };
         格式化运行(paragraph, 正文字体, 西文字体, 正文字号);
+        // 三号字在 156 毫米版心中排 28 字，收紧字间距而不缩放字形；Word 样本验证首行 26 字、后续 28 字。
+        foreach (var run in GovOpenXmlHelper.获取文本运行(paragraph))
+            run.RunProperties!.Spacing = new Spacing { Val = -5 };
     }
 
     private static void 格式化运行(Paragraph paragraph, string 中文字体, string latinFont, string fontSize, bool bold = false)
