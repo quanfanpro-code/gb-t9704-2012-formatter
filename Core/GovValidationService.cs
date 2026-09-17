@@ -1,4 +1,4 @@
-﻿using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -11,16 +11,19 @@ public sealed class GovValidationService
 
     private readonly List<string> _warnings = [];
     private readonly List<string> _errors = [];
+    private readonly List<string> _formatErrors = [];
 
     /// <summary>校验过程中收集的所有警告。</summary>
     public IReadOnlyList<string> Warnings => _warnings;
     public IReadOnlyList<string> Errors => _errors;
+    public IReadOnlyList<string> 版式错误 => _formatErrors;
     public bool HasBlockingErrors => _errors.Count > 0;
 
-    public void 验证(WordprocessingDocument document)
+    public void 验证(WordprocessingDocument document, GovDocumentStructure? structure = null)
     {
         _warnings.Clear();
         _errors.Clear();
+        _formatErrors.Clear();
 
         if (document.MainDocumentPart?.Document?.Body == null)
         {
@@ -44,7 +47,73 @@ public sealed class GovValidationService
             _errors.Add("文档未识别到可用正文内容。");
 
         校验页面规则(body);
+        if (structure != null)
+            校验版式(body, structure);
 
+    }
+
+    private void 校验版式(Body body, GovDocumentStructure structure)
+    {
+        var paragraphs = body.Elements<Paragraph>()
+            .Where(x => !x.Ancestors<Table>().Any())
+            .ToList();
+
+        foreach (var index in structure.标题段索引)
+        {
+            if (index >= paragraphs.Count)
+                continue;
+            var paragraph = paragraphs[index];
+            if (paragraph.ParagraphProperties?.Justification?.Val?.Value != JustificationValues.Center)
+                _formatErrors.Add($"标题第 {index + 1} 段未居中。");
+            if (GovOpenXmlHelper.获取可格式化文字运行(paragraph).Any(x =>
+                    !string.IsNullOrWhiteSpace(x.InnerText) &&
+                    x.RunProperties?.FontSize?.Val?.Value != "44"))
+                _formatErrors.Add($"标题第 {index + 1} 段字号不是二号。");
+        }
+
+        var excluded = structure.标题段索引
+            .Concat(structure.文号段索引)
+            .Concat(structure.主送机关段索引)
+            .Concat(structure.日期段索引)
+            .Concat(structure.附件段索引)
+            .Concat(structure.版记段索引)
+            .Concat(structure.标题级别映射.Keys)
+            .ToHashSet();
+        for (var i = 0; i < paragraphs.Count; i++)
+        {
+            if (paragraphs[i].ParagraphProperties?.Justification?.Val?.Value == JustificationValues.Center &&
+                GovOpenXmlHelper.获取可格式化文字运行(paragraphs[i]).Any(x =>
+                    !string.IsNullOrWhiteSpace(x.InnerText) &&
+                    x.RunProperties?.FontSize?.Val?.Value == "44"))
+                excluded.Add(i);
+        }
+        if (structure.标题段索引.Count > 0)
+        {
+            for (var i = 0; i < structure.标题段索引.Min(); i++)
+                excluded.Add(i);
+        }
+        for (var i = 0; i < paragraphs.Count; i++)
+        {
+            if (excluded.Contains(i))
+                continue;
+            if (GovOpenXmlHelper.获取可格式化文字运行(paragraphs[i])
+                .Any(x => x.RunProperties?.FontSize?.Val?.Value != "32"))
+                _formatErrors.Add($"正文第 {i + 1} 段字号不是三号。");
+        }
+
+        foreach (var table in body.Elements<Table>())
+        {
+            if (table.Descendants<TableCell>().Any(cell =>
+                    cell.TableCellProperties?.TableCellVerticalAlignment?.Val?.Value !=
+                    TableVerticalAlignmentValues.Center))
+                _formatErrors.Add("表格未垂直居中。");
+            if (GovOpenXmlHelper.获取可格式化文字运行(table).Any(run =>
+                    !string.IsNullOrWhiteSpace(run.InnerText) &&
+                    run.RunProperties?.FontSize?.Val?.Value != "28"))
+                _formatErrors.Add("表格字号不是小四号。");
+        }
+
+        _errors.AddRange(_formatErrors.Select(x => $"版式一致性错误：{x}"));
     }
 
     private void 校验页面规则(Body body)

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -54,15 +54,17 @@ public static class GovOpenXmlHelper
         return 规范文本(提取可见文本(element));
     }
 
-    /// <summary>
-    /// 仅取段落的直接子 Run。取舍说明：超链接/SimpleField 内的 Run 不参与字体统一——
-    /// 这类结构会被 结构安全分析器 判为高风险并跳过整体重写，若此处再深入子孙节点改字体，
-    /// 等于绕过防护门去动我们声明不碰的内容（Drawing 文本框、域结果等），风险大于收益。
-    /// 代价是超链接文字字体不统一，属可接受的视觉残留，留给人工处理。
-    /// </summary>
     public static IEnumerable<Run> 获取文本运行(Paragraph paragraph)
     {
-        return paragraph.Elements<Run>().Where(x => !string.IsNullOrWhiteSpace(x.InnerText));
+        return 获取可格式化文字运行(paragraph);
+    }
+
+    public static IEnumerable<Run> 获取可格式化文字运行(OpenXmlElement element)
+    {
+        return element.Descendants<Run>()
+            .Where(x => !string.IsNullOrWhiteSpace(x.InnerText))
+            .Where(x => !x.Ancestors<Drawing>().Any())
+            .Where(x => !x.Ancestors<TextBoxContent>().Any());
     }
 
     public static ParagraphProperties 确保段落属性(Paragraph paragraph)
@@ -208,6 +210,22 @@ public static class GovOpenXmlHelper
         if (styleName is "标题 3" or "三级标题") return 3;
         if (styleName is "标题 4" or "四级标题") return 4;
         return 0;
+    }
+
+    public static bool 是文档标题样式(MainDocumentPart? mainPart, Paragraph paragraph)
+    {
+        var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
+        if (string.IsNullOrWhiteSpace(styleId))
+            return false;
+
+        if (styleId.Equals("Title", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var style = mainPart?.StyleDefinitionsPart?.Styles?.Elements<Style>()
+            .FirstOrDefault(x => x.StyleId?.Value == styleId);
+        var styleName = style?.StyleName?.Val?.Value;
+        return styleName?.Equals("Title", StringComparison.OrdinalIgnoreCase) == true ||
+               styleName == "标题";
     }
 
     public static int 解析大纲级别(Paragraph paragraph)

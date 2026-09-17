@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using DocumentFormat.OpenXml.Packaging;
 using GBT9704_2012排版工具.Contracts;
 
@@ -83,6 +83,8 @@ public sealed class GovDocumentPipeline
                 _headerFooterService.格式化(document, request.CancellationToken);
                 if (request.模式 != 排版模式.普通材料)
                     正式公文服务.格式化(document, request);
+                if (request.模式 != 排版模式.普通材料)
+                    _tableService.格式化(body);
                 request.CancellationToken.ThrowIfCancellationRequested();
                 mainPart.Document.Save();
             }
@@ -94,9 +96,14 @@ public sealed class GovDocumentPipeline
                 using var finalDocument = WordprocessingDocument.Open(workingPath, false);
                 var finalMainPart = finalDocument.MainDocumentPart ?? throw new InvalidOperationException("输出文档缺少主部件。");
                 finalStructure = _structureAnalyzer.分析(finalMainPart);
-                _validationService.验证(finalDocument);
+                _validationService.验证(finalDocument, finalStructure);
                 request.检查记录.Add(new("OPENXML_SCHEMA", "OpenXML结构合法性", _validationService.HasBlockingErrors ? "失败" : "通过", string.Join("\n", _validationService.Errors)));
                 request.检查记录.Add(new("PAGE_SETUP", "页面参数", _validationService.Warnings.Count > 0 ? "需复核" : "通过", string.Join("\n", _validationService.Warnings)));
+                request.检查记录.Add(new(
+                    "FORMAT_CONSISTENCY",
+                    "版式一致性",
+                    _validationService.版式错误.Count == 0 ? "通过" : "失败",
+                    string.Join("\n", _validationService.版式错误)));
             }
             catch (Exception ex)
             {
@@ -115,8 +122,6 @@ public sealed class GovDocumentPipeline
             request.OutputPath = outputPath;
             var 校验警告列表 = new List<string>(_validationService.Warnings);
             校验警告列表.AddRange(要素警告);
-            if (_paragraphService.跳过不安全段落数 > 0)
-                校验警告列表.Add($"跳过 {_paragraphService.跳过不安全段落数} 个含复杂结构的段落，内容和版式保持原样，请人工确认。");
             var 校验警告 = 校验警告列表.Count > 0
                 ? string.Join("\n", 校验警告列表)
                 : null;

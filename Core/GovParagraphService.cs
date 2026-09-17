@@ -1,4 +1,4 @@
-﻿using DocumentFormat.OpenXml.Wordprocessing;
+using DocumentFormat.OpenXml.Wordprocessing;
 
 using DocumentFormat.OpenXml.Packaging;
 
@@ -15,16 +15,8 @@ public sealed class GovParagraphService
     private const string 标题字号 = "44";
     private const string 正文字号 = "32";
 
-    /// <summary>
-    /// 上一轮 格式化 中因含高风险结构（公章图片/超链接/书签/批注/域/内容控件等）而跳过文本重写的段落数。
-    /// 这些段落仍做了行距/缩进/对齐等段落属性级调整，调用方应将该计数呈现给用户以便人工复核。
-    /// </summary>
-    public int 跳过不安全段落数 { get; private set; }
-
     public void 格式化(Body body, GovDocumentStructure structure, CancellationToken cancellationToken = default)
     {
-        跳过不安全段落数 = 0;
-
         var paragraphs = body.Elements<Paragraph>()
             .Where(x => !x.Ancestors<Table>().Any())
             .ToList();
@@ -41,17 +33,6 @@ public sealed class GovParagraphService
 
             if (isEmpty)
             {
-                continue;
-            }
-
-            // 防护门：含 Drawing/Hyperlink/书签/批注/域/SdtRun 等结构的段落禁止整体重写文本，
-            // 否则成文日期段锚定的公章图片等内容会被静默抹平。此类段落只做上面的 pPr 级调整。
-            var 可重写文本 = 结构安全分析器.段落可安全重写(paragraph);
-            if (!可重写文本)
-            {
-                跳过不安全段落数++;
-                System.Diagnostics.Trace.WriteLine(
-                    $"[GovParagraphService] 第 {i} 段含高风险结构，已跳过文本重写：{text}");
                 continue;
             }
 

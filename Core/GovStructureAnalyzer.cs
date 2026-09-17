@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
@@ -48,10 +48,11 @@ public sealed class GovStructureAnalyzer
             if (string.IsNullOrWhiteSpace(text))
                 continue;
 
-            var 允许版式特征 = structure.文号段索引.Count > 0;
+            var 显式文档标题 = GovOpenXmlHelper.是文档标题样式(mainPart, paragraphs[i]);
+            var 允许版式特征 = structure.文号段索引.Count > 0 || 显式文档标题;
             var 首段长标题 = i == 标题起点 && text.Length <= 160 && text.StartsWith("关于") &&
                 !text.Contains('。') && 公文标题关键词.Any(k => text.EndsWith(k, StringComparison.Ordinal));
-            if (!首段长标题 && !疑似标题段(mainPart, paragraphs[i], text, 允许版式特征))
+            if (!显式文档标题 && !首段长标题 && !疑似标题段(mainPart, paragraphs[i], text, 允许版式特征))
             {
                 if (已发现标题)
                     break;

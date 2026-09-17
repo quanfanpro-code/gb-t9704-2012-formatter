@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Text.Json;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -12,14 +12,137 @@ namespace GB_T9704_2012排版工具.Tests;
 public sealed class 文档流水线测试
 {
     [Fact]
+    public void 无文号多行Title样式必须按公文标题排版()
+    {
+        var input = 创建样本文档(
+            body =>
+            {
+                body.Append(
+                    new Paragraph(
+                        new ParagraphProperties(new ParagraphStyleId { Val = "customTitle" }),
+                        new Run(
+                            new Text("成都轨道交通集团有限公司"),
+                            new Break(),
+                            new Text("公开发行可转换公司债券申请文件"),
+                            new Break(),
+                            new Text("第二轮反馈回复材料"))),
+                    new Paragraph(
+                        new ParagraphProperties(new ParagraphStyleId { Val = "customHeading1" }),
+                        new Run(new Text("问题二"))),
+                    new Paragraph(new Run(new Text("这是正文。"))));
+            },
+            configureMain: main =>
+            {
+                var stylesPart = main.AddNewPart<StyleDefinitionsPart>();
+                stylesPart.Styles = new Styles(
+                    new Style(
+                        new StyleName { Val = "Title" },
+                        new StyleRunProperties(new FontSize { Val = "32" }))
+                    {
+                        Type = StyleValues.Paragraph,
+                        StyleId = "customTitle"
+                    },
+                    new Style(new StyleName { Val = "heading 1" })
+                    {
+                        Type = StyleValues.Paragraph,
+                        StyleId = "customHeading1"
+                    });
+            });
+
+        var result = 处理(input);
+
+        Assert.True(result.Success, result.Message);
+        using var output = WordprocessingDocument.Open(result.OutputPath, false);
+        var paragraphs = 获取正文(output).Elements<Paragraph>().ToList();
+        var title = paragraphs[0];
+        var issueHeading = paragraphs[1];
+        Assert.Equal(JustificationValues.Center, title.ParagraphProperties?.Justification?.Val?.Value);
+        Assert.True(title.ParagraphProperties?.Indentation?.FirstLineChars?.Value is null or 0);
+        Assert.All(
+            title.Descendants<Run>().Where(x => !string.IsNullOrWhiteSpace(x.InnerText)),
+            run => Assert.Equal("44", run.RunProperties?.FontSize?.Val?.Value));
+        Assert.NotEqual("44", issueHeading.GetFirstChild<Run>()?.RunProperties?.FontSize?.Val?.Value);
+    }
+
+    [Fact]
+    public void 超链接段落必须保留关系并统一正文格式()
+    {
+        var input = 创建样本文档(
+            body =>
+            {
+                var hyperlink = new Hyperlink
+                {
+                    Id = "rIdHyperlink"
+                };
+                hyperlink.Append(new Run(new Text("链接文字")));
+                body.Append(
+                    new Paragraph(
+                        new Run(new Text("普通文字")),
+                        hyperlink));
+            },
+            configureMain: main =>
+            {
+                main.AddHyperlinkRelationship(
+                    new Uri("https://example.com/source", UriKind.Absolute),
+                    true,
+                    "rIdHyperlink");
+            });
+
+        var result = 处理(input);
+
+        Assert.True(result.Success, result.Message);
+        using var output = WordprocessingDocument.Open(result.OutputPath, false);
+        var main = output.MainDocumentPart!;
+        var paragraph = 获取正文(output).Elements<Paragraph>().Single();
+        Assert.Equal("普通文字链接文字", paragraph.InnerText);
+        var relationship = main.HyperlinkRelationships.Single();
+        Assert.Equal(new Uri("https://example.com/source"), relationship.Uri);
+        Assert.All(
+            paragraph.Descendants<Run>().Where(x => !string.IsNullOrWhiteSpace(x.InnerText)),
+            run =>
+            {
+                Assert.Equal("仿宋_GB2312", run.RunProperties?.RunFonts?.EastAsia?.Value);
+                Assert.Equal("32", run.RunProperties?.FontSize?.Val?.Value);
+            });
+        Assert.Equal(JustificationValues.Both, paragraph.ParagraphProperties?.Justification?.Val?.Value);
+    }
+
+    [Fact]
+    public void 版式校验必须发现正文和表格字号错误()
+    {
+        var input = 创建样本文档(body =>
+        {
+            body.Append(
+                new Paragraph(new Run(
+                    new RunProperties(new FontSize { Val = "24" }),
+                    new Text("错误正文"))),
+                创建表格(new TableRow(new TableCell(
+                    new Paragraph(new Run(
+                        new RunProperties(new FontSize { Val = "24" }),
+                        new Text("错误表格")))))));
+        });
+
+        using var document = WordprocessingDocument.Open(input, false);
+        var validator = new GovValidationService();
+        validator.验证(document, new GovDocumentStructure());
+
+        Assert.Contains(validator.版式错误, x => x.Contains("正文", StringComparison.Ordinal));
+        Assert.Contains(validator.版式错误, x => x.Contains("表格", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void 表格数字和尾部空行必须保持()
     {
         var input = 创建样本文档(body =>
         {
             添加标准版头(body);
             body.Append(创建表格(
-                new TableRow(new TableCell(new Paragraph(new Run(new Text("1234"))))),
-                new TableRow(new TableCell(new Paragraph(new Run(new Text(string.Empty)))))));
+                new TableRow(
+                    new TableCell(new Paragraph(new Run(new Text("项目")))),
+                    new TableCell(new Paragraph(new Run(new Text("1234"))))),
+                new TableRow(
+                    new TableCell(new TableCellProperties(new GridSpan { Val = 2 }),
+                        new Paragraph(new Run(new Text("合并内容")))))));
         });
 
         var result = 处理(input);
@@ -28,7 +151,18 @@ public sealed class 文档流水线测试
         using var output = WordprocessingDocument.Open(result.OutputPath, false);
         var table = Assert.Single(获取正文(output).Elements<Table>());
         Assert.Equal(2, table.Elements<TableRow>().Count());
-        Assert.Equal("1234", table.Elements<TableRow>().First().InnerText);
+        Assert.Equal("项目1234", table.Elements<TableRow>().First().InnerText);
+        Assert.Equal("合并内容", table.Elements<TableRow>().Last().InnerText);
+        Assert.Equal(2, table.Elements<TableRow>().Last().Elements<TableCell>().Single()
+            .TableCellProperties?.GridSpan?.Val?.Value ?? 0);
+        Assert.All(
+            table.Descendants<Run>().Where(x => !string.IsNullOrWhiteSpace(x.InnerText)),
+            run => Assert.Equal("28", run.RunProperties?.FontSize?.Val?.Value));
+        Assert.All(
+            table.Descendants<TableCell>(),
+            cell => Assert.Equal(
+                TableVerticalAlignmentValues.Center,
+                cell.TableCellProperties?.TableCellVerticalAlignment?.Val?.Value));
     }
 
     [Fact]
@@ -116,6 +250,10 @@ public sealed class 文档流水线测试
         using var json = JsonDocument.Parse(File.ReadAllText(result.AuditPath!));
         Assert.True(json.RootElement.GetProperty("HasPageNumberField").GetBoolean());
         Assert.Equal("通过", json.RootElement.GetProperty("GateResult").GetString());
+        Assert.Contains(
+            json.RootElement.GetProperty("实际检查记录").EnumerateArray(),
+            item => item.GetProperty("编号").GetString() == "FORMAT_CONSISTENCY" &&
+                    item.GetProperty("结果").GetString() == "通过");
     }
 
     [Fact]
@@ -167,7 +305,10 @@ public sealed class 文档流水线测试
         return new GovDocumentPipeline(() => []).Process(new RequestContract { InputPath = input });
     }
 
-    private static string 创建样本文档(Action<Body> buildBody, bool addHeaderAndFooters = false)
+    private static string 创建样本文档(
+        Action<Body> buildBody,
+        bool addHeaderAndFooters = false,
+        Action<MainDocumentPart>? configureMain = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "GB-T9704-2012-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -176,6 +317,7 @@ public sealed class 文档流水线测试
         using var document = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         var main = document.AddMainDocumentPart();
         main.Document = new Document();
+        configureMain?.Invoke(main);
         var body = new Body();
         main.Document.Append(body);
         buildBody(body);
