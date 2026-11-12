@@ -51,7 +51,7 @@ public static class 正式公文服务
         var intro = new List<Paragraph>();
         if (request.模式 == 排版模式.电子红头)
         {
-            var agency = 段落(f.机关标志, "方正小标宋简体", 64, JustificationValues.Center, 800);
+            var agency = 段落(f.机关标志, GovParagraphService.标题字体, 64, JustificationValues.Center, 800);
             // Word 与已核验小标宋 4.00 的字面上缘相差 108 缇，按字面而非段落起点定位。
             agency.ParagraphProperties!.SpacingBetweenLines!.Before = (毫米(35) - 108).ToString();
             agency.ParagraphProperties.SpacingBetweenLines.After = "1156";
@@ -72,7 +72,7 @@ public static class 正式公文服务
             number.ParagraphProperties.SpacingBetweenLines.Before = Math.Max(0, 毫米(request.套打红线距纸顶毫米 - 37 - 4) - 505).ToString();
         intro.Add(number);
         {
-            var title = 段落(f.标题, "方正小标宋简体", 44, JustificationValues.Center);
+            var title = 段落(f.标题, GovParagraphService.标题字体, 44, JustificationValues.Center);
             title.ParagraphProperties!.KeepNext = new KeepNext();
             title.ParagraphProperties.SpacingBetweenLines!.After = "578";
             intro.Add(title);
@@ -125,7 +125,7 @@ public static class 正式公文服务
                 GovOpenXmlHelper.设置段落缩进(title);
                 title.ParagraphProperties!.Justification = new Justification { Val = JustificationValues.Center };
                 title.ParagraphProperties.KeepNext = new KeepNext();
-                foreach (var r in title.Elements<Run>()) GovOpenXmlHelper.设置运行格式(r, "方正小标宋简体", "Times New Roman", "44");
+                foreach (var r in title.Elements<Run>()) GovOpenXmlHelper.设置运行格式(r, GovParagraphService.标题字体, "Times New Roman", "44");
             }
         }
         if (f.抄送.Length > 0 || f.印发机关.Length > 0)

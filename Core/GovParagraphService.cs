@@ -7,7 +7,8 @@ namespace GBT9704_2012排版工具.Core;
 public sealed class GovParagraphService
 {
     private const int 固定行距 = 578;
-    private const string 标题字体 = "方正小标宋简体";
+    // 未安装方正小标宋_GBK 时由 GovFontCheckService 退回方正小标宋简体
+    internal static readonly string 标题字体 = GovFontCheckService.选定标题字体();
     private const string 一级标题字体 = "黑体";
     private const string 二级标题字体 = "楷体_GB2312";
     private const string 正文字体 = "仿宋_GB2312";

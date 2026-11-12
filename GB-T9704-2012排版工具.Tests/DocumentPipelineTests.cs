@@ -357,7 +357,7 @@ public sealed class 文档流水线测试
     {
         body.Append(
             居中段落("某某市人民政府文件", new RunProperties(
-                new RunFonts { EastAsia = "方正小标宋简体" },
+                new RunFonts { EastAsia = "方正小标宋_GBK" },
                 new Color { Val = "FF0000" },
                 new FontSize { Val = "36" })),
             居中段落("某政发〔2026〕1号"),
